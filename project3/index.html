@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Project 3 — Fetch Dances</title>
+<style>
+  :root { --bg: #faf8f5; --ink: #1d1d1f; --muted: #5f5f66; --rule: #e4e0d9; --accent: #c2410c; --card: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17171a; --ink: #ececef; --muted: #a3a3ab; --rule: #2e2e33; --accent: #fb923c; --card: #1f1f23; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+  h1 { font-size: 2.1rem; line-height: 1.2; margin: 12px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  video { width: 100%; border-radius: 10px; background: #000; display: block; }
+  .caption { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         background: var(--card); border: 1px solid var(--rule); padding: 1px 5px; border-radius: 5px; }
+  pre { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 12px;
+        overflow-x: auto; font-size: 14px; line-height: 1.45; }
+  pre code { border: 0; padding: 0; background: none; }
+  .credit { color: var(--muted); font-size: 15px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="../">← ROB 511 portfolio</a></nav>
+  <h1>Project 3: Fetch dances</h1>
+  <p class="sub">Forward kinematics from a URDF, driven through a finite state machine choreography.</p>
+
+  <video controls playsinline preload="metadata" src="fetch_bollywood.mp4"></video>
+  <p class="caption">Fetch performing the choreography in my viewer. Every link is placed from my runtime's
+    <code>/xform_world</code> messages.</p>
+
+  <h2>The robot</h2>
+  <p>The robot is <strong>Fetch</strong>, a mobile manipulator with a wheeled base, a prismatic torso lift, a pan/tilt
+    head and a single 7-joint arm with a parallel gripper. I load its real URDF, unmodified, by setting the
+    <code>robot_description</code> parameter. My <code>robot_state_publisher</code> validates the URDF
+    (26 links, 25 joints), finds the root link (<code>base_link</code>) and publishes every joint's transform on
+    <code>/tf</code>. My <code>robot_world_state_publisher</code> composes those into each link's pose in the world.</p>
+  <p>The dance uses the torso lift, head pan and tilt, and all seven arm joints. The base does not move.</p>
+
+  <h2>The choreography</h2>
+  <p>It is a crude, one-armed adaptation of a Bollywood routine, about 19 seconds long. Fetch has one arm and a fixed
+    base, so moves written for two arms use its one arm. A body turn becomes a wide shoulder swing with the head
+    turned. The 360° spin becomes a full twirl of the forearm and wrist roll joints, which are continuous.</p>
+  <table>
+    <thead><tr><th>#</th><th>Move</th><th>On Fetch</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Cross arms diagonally</td><td>arm folded across the chest, held briefly</td></tr>
+      <tr><td>2</td><td>Stretch out, point to the sky</td><td>arm out to the side, then straight up with the head tilted back</td></tr>
+      <tr><td>3</td><td>Around the head, point right</td><td>gripper circles over the head, then points right as the head turns</td></tr>
+      <tr><td>4</td><td>Arm down, diagonal across chest, arms in front</td><td>three poses in a row</td></tr>
+      <tr><td>5</td><td>Rotate 90°, arm to the side at an angle</td><td>shoulder swings to the side, head follows</td></tr>
+      <tr><td>6</td><td>Snap ×2</td><td>elbow-up “snap” pose, then arm down, twice</td></tr>
+      <tr><td>7</td><td>Touch head, rotate 360°</td><td>gripper on the head, then a full forearm and wrist twirl</td></tr>
+      <tr><td>8</td><td>Angle up, angle down, cascade ×2</td><td>arm up, down, then a sweep from top right to bottom left</td></tr>
+    </tbody>
+  </table>
+  <p>The choreography runs on my <code>finite_state_machine</code> node as a table of 45 states. Each state is a
+    joint-space setpoint, and its <code>on_arrival</code> transition fires once <code>/joint_states</code> shows every
+    joint within <code>epsilon</code> (0.05 rad) of the target. The FSM publishes each setpoint on
+    <code>/joint_trajectory</code>. My <code>joint_state_publisher</code> moves the joints toward it with a
+    proportional servo and publishes <code>/joint_states</code> at 10 Hz.</p>
+  <p>A pause on a pose (for example 0.5 s pointing at the sky) is a short chain of copies of that state. The robot is
+    already there, so each copy finishes on the FSM's next 0.1 s check. This keeps the timing within the standard
+    FSM design. I chose each arm pose as a target position for the gripper, then found joint angles that reach it
+    with a small numeric search over my own forward kinematics. The generator, <code>tools/make_bollywood.py</code>,
+    checks every move this way.</p>
+
+  <h2>How I drew it</h2>
+  <p>The viewer is an external client of my runtime, the same way the autograder connects. A browser cannot open the
+    raw TCP socket on port 9095, so a small Python server (<code>tools/viewer.py</code>) subscribes to
+    <code>/xform_world</code> and <code>/fsm/status</code> and relays them to the page with Server-Sent Events. It also
+    serves the robot's links and visuals, parsed with my own URDF parser, and Fetch's mesh files.</p>
+  <p>The page (<code>tools/viewer.html</code>) uses three.js. Each link is a <code>Group</code> whose matrix comes
+    straight from <code>/xform_world</code>:</p>
+<pre><code>group.matrixAutoUpdate = false;
+group.matrix.fromArray(entry.matrix);   // column-major 4x4, exactly as published</code></pre>
+  <p>That works because the course defines <code>/xform_world</code> matrices in column-major order, the layout
+    <code>Matrix4.fromArray</code> reads. Inside each link group, the visual is placed at its URDF
+    <code>&lt;origin&gt;</code> (three.js Euler order <code>"ZYX"</code> matches URDF's roll-pitch-yaw). The meshes are
+    Fetch's Collada and STL files. The scene uses z-up like URDF. The Collada loader rotates z-up files to y-up, so the
+    viewer undoes that rotation.</p>
+
+  <h2>Under the hood</h2>
+  <p>No kinematics, transform or URDF library is used. Quaternions, roll-pitch-yaw
+    (<code>R = Rz·Ry·Rx</code>), axis-angle rotation, each joint's <code>T_origin · T_motion(q)</code>, and the tree
+    traversal from the root are written from scratch. The runtime passes 38 tests, including black-box tests over TCP
+    in the style of the autograder.</p>
+
+  <h2>Credits</h2>
+  <p class="credit">Fetch robot description © Fetch Robotics, Inc., CC BY-NC-SA 4.0.<br>
+    Choreography: my own one-armed adaptation of a Bollywood dance routine.<br>
+    Rendering: <a href="https://threejs.org/">three.js</a>.</p>
+</main>
+</body>
+</html>
